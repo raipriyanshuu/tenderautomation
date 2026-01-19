@@ -33,12 +33,12 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = () => {
 
     const validFiles = Array.from(files).filter(
       f =>
-        f.size <= 10 * 1024 * 1024 &&
-        /\.(pdf|docx?|xlsx?)$/i.test(f.name)
+       
+        /\.(zip|pdf|docx?|xlsx?)$/i.test(f.name)
     );
 
     if (validFiles.length === 0) {
-      setError('Only PDF, Word, Excel files up to 10MB are allowed.');
+      setError('Only PDF, Word, Excel zip files up to 10MB are allowed.');
       return;
     }
 
