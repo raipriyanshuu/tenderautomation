@@ -2,7 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
-  AlertTriangle, 
+  AlertTriangle,
   FileText,
   Search,
   Upload,
@@ -36,9 +36,16 @@ import { dbService } from "@/lib/db-service";
 import { CalculationDetails } from "@/components/CalculationDetails";
 import { FileUploadZone } from "@/components/FileUploadZone";
 import { PriceValidation } from "@/components/PriceValidation";
+import { DocumentSource, DocumentSourceInline } from "@/components/DocumentSource";
 import { LVPosition } from "@/lib/price-validation-service";
 
 // ---------------- Types
+interface SourceInfo {
+  text: string;
+  source_document: string;
+  source_chunk_id?: string | null;
+}
+
 interface Tender {
   id: string;
   title: string;
@@ -48,33 +55,45 @@ interface Tender {
   url: string;
   score: number; // overall match score 0..100
   legalRisks: string[];
+  legalRisksWithSource?: SourceInfo[];
   mustHits: number;
   mustTotal: number;
+  mustHitPercent?: number; // NEW: Calculated percentage
   canHits: number;
   canTotal: number;
+  possibleHitPercent?: number; // NEW: Calculated percentage
+  logisticsScore?: number; // NEW: Logistics feasibility score
   serviceTypes: string[]; // e.g., Unterhaltsreinigung, Glasreinigung
   scopeOfWork?: string;
+  scopeOfWorkSource?: SourceInfo; // NEW: Source tracking for scope
   certifications?: string[];
   evaluationCriteria?: string[];
+  evaluationCriteriaWithSource?: SourceInfo[]; // NEW: Source tracking
   safety?: string[];
   penalties?: string[];
   submission?: string[]; // Top mandatory requirements (from mandatory_requirements[])
+  submissionWithSource?: SourceInfo[]; // NEW: Source tracking
   processSteps?: Array<{ // Timeline/process steps (from process_steps[])
     step: number;
     days_de?: string;
     title_de?: string;
     description_de?: string;
+    source_document?: string; // NEW: Source tracking
+    source_chunk_id?: string | null;
   }>;
   economicAnalysis?: { // Economic analysis (from economic_analysis)
-    potentialMargin?: string | null;
-    orderValueEstimated?: string | null;
-    competitiveIntensity?: string | null;
-    logisticsCosts?: string | null;
-    contractRisk?: string | null;
+    potentialMargin?: { text: string | null; source_document: string | null } | string | null;
+    orderValueEstimated?: { text: string | null; source_document: string | null } | string | null;
+    competitiveIntensity?: { text: string | null; source_document: string | null } | string | null;
+    logisticsCosts?: { text: string | null; source_document: string | null } | string | null;
+    contractRisk?: { text: string | null; source_document: string | null } | string | null;
     criticalSuccessFactors?: string[];
   };
   missingEvidence?: any[]; // Missing evidence documents (from missing_evidence_documents[])
+  missingEvidenceWithSource?: SourceInfo[]; // NEW: Source tracking
   sources?: {
+    title?: string;
+    buyer?: string;
     mustCriteria?: string;
     logistics?: string;
     deadline?: string;
@@ -282,7 +301,7 @@ function SourceBadge({ source }: { source?: string }) {
         className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer"
         onClick={(e) => {
           e.preventDefault();
-          alert(`Quelle: ${source}\n\nHinweis: In der vollständigen Version würde dies das entsprechende Dokument auf der richtigen Seite öffnen.`);
+          alert(`Quelle: ${source}`);
         }}
       >
         <FileText className="h-3.5 w-3.5" />
@@ -412,7 +431,7 @@ export default function ReikanTenderAI() {
 
   const winProb = useMemo(() => computeWinProbability(selected, missingCount, answers, mustPct), [selected, missingCount, answers, mustPct]);
 
-  const { subtotal, surcharge, margin, total} = useMemo(() => calcPrice(pricing), [pricing]);
+  const { subtotal, surcharge, margin, total } = useMemo(() => calcPrice(pricing), [pricing]);
 
   const handleValidateConsistency = async () => {
     setValidating(true);
@@ -826,8 +845,8 @@ Einreichungs-ID: ${currentSubmissionId || 'Nicht gespeichert'}
             <span className="text-sm text-green-700">✅ Connected to API - Showing {results.length} tenders from database</span>
           </div>
         )}
-        
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-3"> 
+
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
               <Truck className="h-6 w-6" /> abc
@@ -846,9 +865,8 @@ Einreichungs-ID: ${currentSubmissionId || 'Nicht gespeichert'}
             <li key={s.id}>
               <button
                 onClick={() => setStep(s.id)}
-                className={`w-full rounded-2xl border p-3 text-left focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 ${
-                  step === s.id ? "border-zinc-900 bg-white shadow" : "border-zinc-200 bg-zinc-50 hover:bg-white"
-                }`}
+                className={`w-full rounded-2xl border p-3 text-left focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 ${step === s.id ? "border-zinc-900 bg-white shadow" : "border-zinc-200 bg-zinc-50 hover:bg-white"
+                  }`}
                 aria-current={step === s.id ? "step" : undefined}
               >
                 <div className="flex items-center justify-between">
@@ -1096,82 +1114,81 @@ function StepScan({
           </CardContent>
         </Card>
 
-      <Card className="md:col-span-2">
-        <CardHeader>
-          <CardTitle className="text-base">Ergebnisse</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3">
-          {results.length === 0 && !loadingTenders && (
-            <div className="rounded-2xl border p-6 text-center">
-              <p className="text-sm text-zinc-600 mb-2">Keine Ausschreibungen gefunden.</p>
-              <p className="text-xs text-zinc-500">
-                {tendersError 
-                  ? `API Fehler: ${tendersError}. Bitte überprüfen Sie die Backend-Verbindung.`
-                  : 'Laden Sie Dokumente über N8N hoch, um Tender zu sehen.'}
-              </p>
-            </div>
-          )}
-          {loadingTenders && (
-            <div className="rounded-2xl border p-6 text-center">
-              <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-zinc-400" />
-              <p className="text-sm text-zinc-600">Lade Tender...</p>
-            </div>
-          )}
-          {results.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setSelected(t)}
-              className={`group w-full rounded-2xl border p-4 text-left transition focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 ${
-                selected?.id === t.id ? "border-zinc-900 bg-white shadow" : "border-zinc-200 bg-zinc-50 hover:bg-white"
-              }`}
-              aria-pressed={selected?.id === t.id}
-            >
-              <div className="grid grid-cols-12 items-start gap-3">
-                {/* Meta column */}
-                <div className="col-span-12 md:col-span-8">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate font-medium" title={t.title}>{t.title}</h3>
-                    <Badge variant="secondary">{t.region === 'DE-BW' ? 'Baden-Württemberg' : t.region}</Badge>
-                    {t.serviceTypes?.map((s, i) => (
-                      <Badge key={i} className="bg-sky-100 text-sky-900">
-                        {s}
-                      </Badge>
-                    ))}
-                  </div>
-                  <p className="text-sm text-zinc-600">
-                    {t.buyer} · Frist {new Date(t.deadline).toLocaleDateString('de-DE')}
-                  </p>
-
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-                    <ScorePill label="Muss" value={pct(t.mustHits, t.mustTotal)} />
-                    <ScorePill label="Kann" value={pct(t.canHits, t.canTotal)} />
-                    <ScorePill label="Gesamt" value={t.score} />
-                  </div>
-                </div>
-
-                {/* Side column */}
-                <div className="col-span-12 md:col-span-4 md:text-right">
-                  <RiskList risks={t.legalRisks} />
-                  <div className="mt-3 flex items-center gap-2 md:justify-end">
-                    <a
-                      href={t.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-2 rounded-lg border px-3 py-1 text-xs hover:bg-zinc-50"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <LinkIcon className="h-3.5 w-3.5" /> Öffnen
-                    </a>
-                    <Button size="sm" className="gap-2" onClick={(e) => { e.stopPropagation(); onNext(); }}>
-                      Weiter <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Ergebnisse</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            {results.length === 0 && !loadingTenders && (
+              <div className="rounded-2xl border p-6 text-center">
+                <p className="text-sm text-zinc-600 mb-2">Keine Ausschreibungen gefunden.</p>
+                <p className="text-xs text-zinc-500">
+                  {tendersError
+                    ? `API Fehler: ${tendersError}. Bitte überprüfen Sie die Backend-Verbindung.`
+                    : 'Laden Sie Dokumente über N8N hoch, um Tender zu sehen.'}
+                </p>
               </div>
-            </button>
-          ))}
-        </CardContent>
-      </Card>
+            )}
+            {loadingTenders && (
+              <div className="rounded-2xl border p-6 text-center">
+                <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-zinc-400" />
+                <p className="text-sm text-zinc-600">Lade Tender...</p>
+              </div>
+            )}
+            {results.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setSelected(t)}
+                className={`group w-full rounded-2xl border p-4 text-left transition focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 ${selected?.id === t.id ? "border-zinc-900 bg-white shadow" : "border-zinc-200 bg-zinc-50 hover:bg-white"
+                  }`}
+                aria-pressed={selected?.id === t.id}
+              >
+                <div className="grid grid-cols-12 items-start gap-3">
+                  {/* Meta column */}
+                  <div className="col-span-12 md:col-span-8">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="truncate font-medium" title={t.title}>{t.title}</h3>
+                      <Badge variant="secondary">{t.region === 'DE-BW' ? 'Baden-Württemberg' : t.region}</Badge>
+                      {t.serviceTypes?.map((s, i) => (
+                        <Badge key={i} className="bg-sky-100 text-sky-900">
+                          {s}
+                        </Badge>
+                      ))}
+                    </div>
+                    <p className="text-sm text-zinc-600">
+                      {t.buyer} · Frist {new Date(t.deadline).toLocaleDateString('de-DE')}
+                    </p>
+
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                      <ScorePill label="Muss" value={pct(t.mustHits, t.mustTotal)} />
+                      <ScorePill label="Kann" value={pct(t.canHits, t.canTotal)} />
+                      <ScorePill label="Gesamt" value={t.score} />
+                    </div>
+                  </div>
+
+                  {/* Side column */}
+                  <div className="col-span-12 md:col-span-4 md:text-right">
+                    <RiskList risks={t.legalRisks} />
+                    <div className="mt-3 flex items-center gap-2 md:justify-end">
+                      <a
+                        href={t.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 rounded-lg border px-3 py-1 text-xs hover:bg-zinc-50"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <LinkIcon className="h-3.5 w-3.5" /> Öffnen
+                      </a>
+                      <Button size="sm" className="gap-2" onClick={(e) => { e.stopPropagation(); onNext(); }}>
+                        Weiter <ArrowRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
@@ -1278,48 +1295,54 @@ function StepCriteria({ tender, routeScore, onNext, onBack, onImproveScore, onEx
               <div>
                 <h4 className="text-sm font-semibold mb-3">C. Wirtschaftlichkeit</h4>
                 <ul className="text-xs space-y-3 text-zinc-700">
-                  <li className="flex items-start gap-2">
-                    <span className="text-zinc-400 mt-0.5">•</span>
-                    <div className="flex-1">
-                      <div><strong>Preismodell:</strong> Tagessätze, Detailkalkulation in Step 6</div>
-                      <SourceBadge source={tender.sources?.pricingModel} />
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-zinc-400 mt-0.5">•</span>
-                    <div className="flex-1">
-                      <div><strong>Vertragsstrafen:</strong> {tender.penalties && tender.penalties.length > 0 ? tender.penalties.join(', ') : 'Standard'}</div>
-                      <SourceBadge source={tender.sources?.penalties} />
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-zinc-400 mt-0.5">•</span>
-                    <div><strong>Abrechnungslogik:</strong> Siehe Vertragsentwurf</div>
-                  </li>
+                  {tender.economicAnalysis?.criticalSuccessFactors && tender.economicAnalysis.criticalSuccessFactors.length > 0 ? (
+                    tender.economicAnalysis.criticalSuccessFactors.slice(0, 3).map((factor, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="text-zinc-400 mt-0.5">•</span>
+                        <div className="flex-1">
+                          <span className="font-medium">{typeof factor === 'object' ? factor.text : factor}</span>
+                          {typeof factor === 'object' && factor.source_document && (
+                            <DocumentSourceInline
+                              source_document={factor.source_document}
+                              source_chunk_id={factor.source_chunk_id}
+                            />
+                          )}
+                        </div>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="flex items-start gap-2">
+                      <span className="text-zinc-400 mt-0.5">•</span>
+                      <div><strong>Preismodell:</strong> Standard</div>
+                    </li>
+                  )}
                 </ul>
               </div>
 
               <div>
                 <h4 className="text-sm font-semibold mb-3">D. Zuschlagslogik</h4>
                 <ul className="text-xs space-y-3 text-zinc-700">
-                  <li className="flex items-start gap-2">
-                    <span className="text-zinc-400 mt-0.5">•</span>
-                    <div className="flex-1">
-                      <div><strong>Bewertungsmatrix:</strong> {tender.evaluationCriteria && tender.evaluationCriteria.length > 0 ? tender.evaluationCriteria.slice(0, 2).join(', ') : 'Standard'}</div>
-                      <SourceBadge source={tender.sources?.evaluationCriteria} />
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-zinc-400 mt-0.5">•</span>
-                    <div><strong>Gesamt-Score:</strong> {tender.score}% (Gewichtet)</div>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-zinc-400 mt-0.5">•</span>
-                    <div className="flex-1">
-                      <div><strong>Preis vs. Qualität:</strong> Siehe Bewertungsmatrix</div>
-                      <SourceBadge source={tender.sources?.evaluationCriteria} />
-                    </div>
-                  </li>
+                  {tender.evaluationCriteria && tender.evaluationCriteria.length > 0 ? (
+                    tender.evaluationCriteria.map((criteria, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="text-zinc-400 mt-0.5">•</span>
+                        <div className="flex-1">
+                          <span className="font-medium">{typeof criteria === 'object' ? criteria?.text : criteria}</span>
+                          {typeof criteria === 'object' && criteria?.source_document && (
+                            <DocumentSourceInline
+                              source_document={criteria.source_document}
+                              source_chunk_id={criteria.source_chunk_id}
+                            />
+                          )}
+                        </div>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="flex items-start gap-2">
+                      <span className="text-zinc-400 mt-0.5">•</span>
+                      <div><strong>Kriterien:</strong> Standard</div>
+                    </li>
+                  )}
                 </ul>
               </div>
             </div>
@@ -1330,7 +1353,20 @@ function StepCriteria({ tender, routeScore, onNext, onBack, onImproveScore, onEx
               <div>
                 <h4 className="text-sm font-semibold mb-3">E. Top-5 Pflichtanforderungen</h4>
                 <ul className="text-xs space-y-2 mb-3">
-                  {tender.submission && tender.submission.length > 0 ? (
+                  {tender.submissionWithSource && tender.submissionWithSource.length > 0 ? (
+                    tender.submissionWithSource.slice(0, 5).map((req, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="text-zinc-400 mt-0.5">{i + 1}.</span>
+                        <div className="flex-1">
+                          <span>{req.text}</span>
+                          <DocumentSourceInline
+                            source_document={req.source_document}
+                            source_chunk_id={req.source_chunk_id}
+                          />
+                        </div>
+                      </li>
+                    ))
+                  ) : tender.submission && tender.submission.length > 0 ? (
                     tender.submission.slice(0, 5).map((req, i) => (
                       <li key={i} className="flex items-start gap-2">
                         <span className="text-zinc-400 mt-0.5">{i + 1}.</span>
@@ -1341,13 +1377,14 @@ function StepCriteria({ tender, routeScore, onNext, onBack, onImproveScore, onEx
                     <li className="text-zinc-500 italic">Keine Pflichtanforderungen verfügbar</li>
                   )}
                 </ul>
-                <SourceBadge source={tender.sources?.submission} />
               </div>
 
               <div>
                 <h4 className="text-sm font-semibold mb-3">Haupt-Risiken</h4>
                 <div className="mb-3">
-                  {tender.legalRisks && tender.legalRisks.length > 0 ? (
+                  {tender.legalRisksWithSource && tender.legalRisksWithSource.length > 0 ? (
+                    <RiskList risksWithSource={tender.legalRisksWithSource} large />
+                  ) : tender.legalRisks && tender.legalRisks.length > 0 ? (
                     <RiskList risks={tender.legalRisks} large />
                   ) : (
                     <p className="text-xs text-zinc-500 italic">Keine Risiken verfügbar</p>
@@ -1357,6 +1394,37 @@ function StepCriteria({ tender, routeScore, onNext, onBack, onImproveScore, onEx
               </div>
             </div>
 
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* NEW: Detailed Assessment with KPI Percentages */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Detailed assessment</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="p-4 bg-white rounded-lg border border-zinc-200">
+              <p className="text-xs text-zinc-600 mb-1">Must-hit</p>
+              <p className="text-3xl font-bold text-zinc-900">{tender.mustHitPercent || pct(tender.mustHits, tender.mustTotal)}%</p>
+              <p className="text-xs text-zinc-500 mt-1">{tender.mustHits}/{tender.mustTotal}</p>
+            </div>
+            <div className="p-4 bg-white rounded-lg border border-zinc-200">
+              <p className="text-xs text-zinc-600 mb-1">Possible-hit</p>
+              <p className="text-3xl font-bold text-zinc-900">{tender.possibleHitPercent || pct(tender.canHits, tender.canTotal)}%</p>
+              <p className="text-xs text-zinc-500 mt-1">{tender.canHits}/{tender.canTotal}</p>
+            </div>
+            <div className="p-4 bg-white rounded-lg border border-zinc-200">
+              <p className="text-xs text-zinc-600 mb-1">In-total</p>
+              <p className="text-3xl font-bold text-zinc-900">{tender.score}%</p>
+              <p className="text-xs text-zinc-500 mt-1">Weighted</p>
+            </div>
+            <div className="p-4 bg-white rounded-lg border border-zinc-200">
+              <p className="text-xs text-zinc-600 mb-1">Logistics</p>
+              <p className="text-3xl font-bold text-zinc-900">{tender.logisticsScore || 100}%</p>
+              <p className="text-xs text-zinc-500 mt-1">Document frequency</p>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1411,14 +1479,18 @@ function StepCriteria({ tender, routeScore, onNext, onBack, onImproveScore, onEx
                 <div className="p-3 bg-emerald-50 rounded border border-emerald-200">
                   <p className="text-xs text-emerald-700 font-medium mb-1">Potenzielle Marge</p>
                   <p className="text-xl font-bold text-emerald-900">
-                    {tender.economicAnalysis?.potentialMargin || 'Nicht verfügbar'}
+                    {typeof tender.economicAnalysis?.potentialMargin === 'object'
+                      ? tender.economicAnalysis.potentialMargin?.text
+                      : tender.economicAnalysis?.potentialMargin || 'Nicht verfügbar'}
                   </p>
                   <p className="text-xs text-emerald-600 mt-1">Bei optimaler Auslastung</p>
                 </div>
                 <div className="p-3 bg-blue-50 rounded border border-blue-200">
                   <p className="text-xs text-blue-700 font-medium mb-1">Auftragswert (geschätzt)</p>
                   <p className="text-xl font-bold text-blue-900">
-                    {tender.economicAnalysis?.orderValueEstimated || 'Nicht verfügbar'}
+                    {typeof tender.economicAnalysis?.orderValueEstimated === 'object'
+                      ? tender.economicAnalysis.orderValueEstimated?.text
+                      : tender.economicAnalysis?.orderValueEstimated || 'Nicht verfügbar'}
                   </p>
                   <p className="text-xs text-blue-600 mt-1">Abhängig von Geräteumfang</p>
                 </div>
@@ -1428,19 +1500,25 @@ function StepCriteria({ tender, routeScore, onNext, onBack, onImproveScore, onEx
                 <div className="flex justify-between text-sm">
                   <span className="text-zinc-600">Wettbewerbsintensität</span>
                   <span className="font-semibold text-zinc-900">
-                    {tender.economicAnalysis?.competitiveIntensity || (tender.score > 85 ? 'Hoch' : 'Mittel')}
+                    {(typeof tender.economicAnalysis?.competitiveIntensity === 'object'
+                      ? tender.economicAnalysis.competitiveIntensity?.text
+                      : tender.economicAnalysis?.competitiveIntensity) || (tender.score > 85 ? 'Hoch' : 'Mittel')}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-zinc-600">Logistik-Aufwand</span>
                   <span className="font-semibold text-zinc-900">
-                    {tender.economicAnalysis?.logisticsCosts || (routeScore > 75 ? 'Niedrig' : routeScore > 50 ? 'Mittel' : 'Hoch')}
+                    {(typeof tender.economicAnalysis?.logisticsCosts === 'object'
+                      ? tender.economicAnalysis.logisticsCosts?.text
+                      : tender.economicAnalysis?.logisticsCosts) || (routeScore > 75 ? 'Niedrig' : routeScore > 50 ? 'Mittel' : 'Hoch')}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-zinc-600">Vertragsrisiko</span>
                   <span className="font-semibold text-amber-600">
-                    {tender.economicAnalysis?.contractRisk || (tender.legalRisks.length > 3 ? 'Erhöht' : 'Normal')}
+                    {(typeof tender.economicAnalysis?.contractRisk === 'object'
+                      ? tender.economicAnalysis.contractRisk?.text
+                      : tender.economicAnalysis?.contractRisk) || (tender.legalRisks.length > 3 ? 'Erhöht' : 'Normal')}
                   </span>
                 </div>
               </div>
@@ -1450,7 +1528,15 @@ function StepCriteria({ tender, routeScore, onNext, onBack, onImproveScore, onEx
                   <p className="text-xs font-medium text-zinc-700 mb-2">Kritische Erfolgsfaktoren:</p>
                   <ul className="text-xs space-y-1 text-zinc-600">
                     {tender.economicAnalysis.criticalSuccessFactors.map((factor, i) => (
-                      <li key={i}>• {factor}</li>
+                      <li key={i} className="flex items-center gap-1">
+                        <span>• {typeof factor === 'object' ? factor.text : factor}</span>
+                        {typeof factor === 'object' && factor.source_document && (
+                          <DocumentSourceInline
+                            source_document={factor.source_document}
+                            source_chunk_id={factor.source_chunk_id}
+                          />
+                        )}
+                      </li>
                     ))}
                   </ul>
                 </div>
@@ -2340,9 +2426,8 @@ function StepEdit({ docs, aiEdits, setAiEdits, onNext, onBack, onImprove, onFill
                       <span className="text-sm font-medium">{doc.name}</span>
                       <span className="text-xs text-zinc-500">PDF · 12.12.2025 · 245 KB</span>
                       {expiryInfo && (
-                        <span className={`text-xs font-medium ${
-                          expiryInfo.days <= 14 ? 'text-orange-600' : expiryInfo.days <= 30 ? 'text-orange-500' : 'text-amber-600'
-                        }`}>
+                        <span className={`text-xs font-medium ${expiryInfo.days <= 14 ? 'text-orange-600' : expiryInfo.days <= 30 ? 'text-orange-500' : 'text-amber-600'
+                          }`}>
                           · {expiryInfo.text}
                         </span>
                       )}
@@ -2400,9 +2485,8 @@ function StepEdit({ docs, aiEdits, setAiEdits, onNext, onBack, onImprove, onFill
                     <div className="p-4">
                       <div className="flex gap-4 border-b mb-4">
                         <button
-                          className={`pb-2 px-1 text-sm font-medium transition-colors relative ${
-                            activeTab === 'pruefbericht' ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'
-                          }`}
+                          className={`pb-2 px-1 text-sm font-medium transition-colors relative ${activeTab === 'pruefbericht' ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'
+                            }`}
                           onClick={() => setActiveTab('pruefbericht')}
                         >
                           Prüfbericht
@@ -2414,9 +2498,8 @@ function StepEdit({ docs, aiEdits, setAiEdits, onNext, onBack, onImprove, onFill
                           )}
                         </button>
                         <button
-                          className={`pb-2 px-1 text-sm font-medium transition-colors relative ${
-                            activeTab === 'felder' ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'
-                          }`}
+                          className={`pb-2 px-1 text-sm font-medium transition-colors relative ${activeTab === 'felder' ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'
+                            }`}
                           onClick={() => setActiveTab('felder')}
                         >
                           Extrahierte Felder
@@ -2428,9 +2511,8 @@ function StepEdit({ docs, aiEdits, setAiEdits, onNext, onBack, onImprove, onFill
                           )}
                         </button>
                         <button
-                          className={`pb-2 px-1 text-sm font-medium transition-colors relative ${
-                            activeTab === 'fundstellen' ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'
-                          }`}
+                          className={`pb-2 px-1 text-sm font-medium transition-colors relative ${activeTab === 'fundstellen' ? 'text-zinc-900' : 'text-zinc-500 hover:text-zinc-700'
+                            }`}
                           onClick={() => setActiveTab('fundstellen')}
                         >
                           Fundstellen
@@ -2461,27 +2543,24 @@ function StepEdit({ docs, aiEdits, setAiEdits, onNext, onBack, onImprove, onFill
                               getMockCheckResults(doc.name).map((result, idx) => (
                                 <div
                                   key={idx}
-                                  className={`rounded-lg border p-4 ${
-                                    result.type === 'warning'
-                                      ? 'bg-orange-50 border-orange-200'
-                                      : result.type === 'success'
+                                  className={`rounded-lg border p-4 ${result.type === 'warning'
+                                    ? 'bg-orange-50 border-orange-200'
+                                    : result.type === 'success'
                                       ? 'bg-green-50 border-green-200'
                                       : 'bg-blue-50 border-blue-200'
-                                  }`}
+                                    }`}
                                 >
                                   <div className="flex items-start gap-3">
                                     {result.type === 'warning' && <AlertTriangle className="h-5 w-5 text-orange-600 flex-shrink-0 mt-0.5" />}
                                     {result.type === 'info' && <Info className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />}
                                     {result.type === 'success' && <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />}
                                     <div className="flex-1">
-                                      <p className={`text-sm font-medium ${
-                                        result.type === 'warning' ? 'text-orange-900' : result.type === 'success' ? 'text-green-900' : 'text-blue-900'
-                                      }`}>
+                                      <p className={`text-sm font-medium ${result.type === 'warning' ? 'text-orange-900' : result.type === 'success' ? 'text-green-900' : 'text-blue-900'
+                                        }`}>
                                         {result.message}
                                       </p>
-                                      <p className={`text-xs mt-1 ${
-                                        result.type === 'warning' ? 'text-orange-700' : result.type === 'success' ? 'text-green-700' : 'text-blue-700'
-                                      }`}>
+                                      <p className={`text-xs mt-1 ${result.type === 'warning' ? 'text-orange-700' : result.type === 'success' ? 'text-green-700' : 'text-blue-700'
+                                        }`}>
                                         Seite {result.page}
                                       </p>
                                     </div>
@@ -2765,7 +2844,28 @@ function ScorePill({ label, value }: { label: string; value: number }) {
   );
 }
 
-function RiskList({ risks, large = false }: { risks: string[]; large?: boolean }) {
+function RiskList({ risks, risksWithSource, large = false }: { risks?: string[]; risksWithSource?: SourceInfo[]; large?: boolean }) {
+  // Prefer risksWithSource if available
+  if (risksWithSource && risksWithSource.length > 0) {
+    return (
+      <div className={`grid ${large ? "gap-2" : "gap-1"}`}>
+        {risksWithSource.map((r, i) => (
+          <div key={i} className={`inline-flex items-start gap-2 ${large ? "text-sm" : "text-xs"} text-amber-700`}>
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              {r.text}
+              <DocumentSourceInline
+                source_document={r.source_document}
+                source_chunk_id={r.source_chunk_id}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Fallback to simple risks array
   if (!risks?.length) return <span className="text-xs text-zinc-400">Keine Risiken erkannt</span>;
   return (
     <div className={`grid ${large ? "gap-2" : "gap-1"}`}>
