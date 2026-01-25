@@ -48,6 +48,11 @@ interface SourceInfo {
 
 interface Tender {
   id: string;
+  runId?: string;
+  tenderId?: string;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
   title: string;
   buyer: string;
   region: string;
@@ -105,6 +110,32 @@ interface Tender {
     submission?: string;
     legalRisks?: string;
   };
+}
+
+interface BatchSummary {
+  run_id: string;
+  ui_json: Record<string, any>;
+  total_files: number;
+  success_files: number;
+  failed_files: number;
+  status: string;
+}
+
+interface BatchFile {
+  doc_id: string;
+  filename: string;
+  file_type?: string | null;
+  status: string;
+  extracted_json?: Record<string, any> | null;
+  error?: string | null;
+  error_type?: string | null;
+  processing_duration_ms?: number | null;
+}
+
+interface BatchSummaryPayload {
+  batchId: string;
+  summary: BatchSummary;
+  files?: BatchFile[];
 }
 
 interface CompanyProfile {
@@ -378,8 +409,30 @@ export default function ReikanTenderAI() {
   const [loadingTenderDetails, setLoadingTenderDetails] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [latestBatch, setLatestBatch] = useState<BatchSummaryPayload | null>(null);
+
+  useEffect(() => {
+    if (isProcessing) {
+      // Clear previous tender data while a new batch is running
+      setSelected(null);
+      setLatestBatch(null);
+    }
+  }, [isProcessing]);
 
 
+
+  const fetchTenderDetails = async (runId: string) => {
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    const response = await fetch(`${apiUrl}/api/tenders/${runId}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const payload = await response.json();
+    if (!payload?.success || !payload?.data) {
+      throw new Error('Tender details not available');
+    }
+    return payload.data as Tender;
+  };
 
   // Fetch tenders from backend API
   useEffect(() => {
@@ -501,42 +554,123 @@ export default function ReikanTenderAI() {
     }
   };
 
-  const handleTenderCreated = async (tenderId: string) => {
-    try {
-      const { data: tender, error } = await dbService.supabase
-        .from('tenders')
-        .select('*')
-        .eq('id', tenderId)
-        .single();
+  const mapSummaryToTender = (payload: BatchSummaryPayload): Tender => {
+    const uiJson = payload.summary.ui_json || {};
+    const meta = uiJson.meta || {};
+    const executive = uiJson.executive_summary || {};
+    const timeline = uiJson.timeline_milestones || {};
+    const requirements = Array.isArray(uiJson.mandatory_requirements)
+      ? uiJson.mandatory_requirements
+      : [];
+    const risks = Array.isArray(uiJson.risks) ? uiJson.risks : [];
+    const serviceTypes = Array.isArray(uiJson.service_types) ? uiJson.service_types : [];
+    const evaluationCriteria = Array.isArray(uiJson.evaluation_criteria) ? uiJson.evaluation_criteria : [];
+    const safety = Array.isArray(uiJson.safety_requirements) ? uiJson.safety_requirements : [];
+    const penalties = Array.isArray(uiJson.contract_penalties) ? uiJson.contract_penalties : [];
+    const certifications = Array.isArray(uiJson.certifications_required) ? uiJson.certifications_required : [];
+    const processSteps = Array.isArray(uiJson.process_steps) ? uiJson.process_steps : [];
+    const missingEvidence = Array.isArray(uiJson.missing_evidence_documents) ? uiJson.missing_evidence_documents : [];
 
-      if (error || !tender) {
-        console.error('Error loading tender:', error);
-        return;
-      }
+    const deadline =
+      timeline.submission_deadline_de ||
+      new Date().toISOString().split('T')[0];
 
-      const tenderData: Tender = {
-        id: tender.id,
-        title: tender.title,
-        buyer: tender.buyer,
-        region: tender.region,
-        deadline: tender.deadline,
-        url: tender.url,
-        score: tender.score,
-        legalRisks: tender.legal_risks as string[],
-        mustHits: tender.must_hits,
-        mustTotal: tender.must_total,
-        canHits: tender.can_hits,
-        canTotal: tender.can_total,
-        serviceTypes: tender.waste_streams as string[]
-      };
+    // Map requirements with source tracking (TOP 5 only)
+    const submissionWithSource = requirements
+      .slice(0, 5)
+      .map((req: any) => ({
+        text: req?.requirement_de || req?.text,
+        source_document: req?.source_document || "",
+        source_chunk_id: req?.source_chunk_id ?? null,
+      }))
+      .filter((req: any) => req.text);
 
-      setSelected(tenderData);
-      setMode("search");
-      setStep(2);
-    } catch (error) {
-      console.error('Error loading tender:', error);
-      alert('Failed to load tender. Please try again.');
-    }
+    // Map risks with source tracking (TOP 5 only)
+    const legalRisksWithSource = risks
+      .slice(0, 5)
+      .map((risk: any) => ({
+        text: risk?.risk_de || risk?.text,
+        source_document: risk?.source_document || "",
+        source_chunk_id: risk?.source_chunk_id ?? null,
+      }))
+      .filter((risk: any) => risk.text);
+
+    // Map evaluation criteria with source
+    const evaluationCriteriaWithSource = evaluationCriteria
+      .map((crit: any) => ({
+        text: typeof crit === 'string' ? crit : (crit?.criterion_de || crit?.text),
+        source_document: typeof crit === 'object' ? crit?.source_document || "" : "",
+        source_chunk_id: typeof crit === 'object' ? (crit?.source_chunk_id ?? null) : null,
+      }))
+      .filter((crit: any) => crit.text);
+
+    // Map missing evidence with source
+    const missingEvidenceWithSource = missingEvidence
+      .map((doc: any) => ({
+        text: doc?.document_de || doc?.text,
+        source_document: doc?.source_document || "",
+        source_chunk_id: doc?.source_chunk_id ?? null,
+      }))
+      .filter((doc: any) => doc.text);
+
+    // Extract scope with source
+    const scopeOfWorkSource: SourceInfo = {
+      text: executive.brief_description_de || "",
+      source_document: executive.source_document || meta.source_document || "",
+      source_chunk_id: null,
+    };
+
+    return {
+      id: meta.tender_id || payload.summary.run_id || payload.batchId,
+      title: meta.tender_title || executive.title_de || meta.tender_id || "Ausschreibung",
+      buyer: meta.organization || executive.organization_de || "Auftraggeber",
+      region: executive.location_de || "DE",
+      deadline,
+      url: "",
+      score: 85, // Default score, can be calculated based on match criteria
+      legalRisks: legalRisksWithSource.map(r => r.text),
+      legalRisksWithSource,
+      mustHits: Math.min(requirements.length, 5),
+      mustTotal: Math.min(requirements.length, 5),
+      canHits: 0,
+      canTotal: 0,
+      serviceTypes,
+      scopeOfWork: executive.brief_description_de || "",
+      scopeOfWorkSource,
+      submission: submissionWithSource.map(s => s.text),
+      submissionWithSource,
+      certifications,
+      evaluationCriteria: evaluationCriteriaWithSource.map(e => e.text),
+      evaluationCriteriaWithSource,
+      safety,
+      penalties,
+      processSteps,
+      economicAnalysis: uiJson.economic_analysis || undefined,
+      missingEvidence: missingEvidenceWithSource.map(m => m.text),
+      missingEvidenceWithSource,
+      sources: {
+        title: meta.source_document || "",
+        buyer: meta.source_document || executive.source_document || "",
+        mustCriteria: requirements[0]?.source_document || "",
+        logistics: executive.source_document || "",
+        deadline: timeline.source_document || "",
+        certifications: requirements[0]?.source_document || "",
+        scopeOfWork: executive.source_document || "",
+        pricingModel: "",
+        penalties: "",
+        evaluationCriteria: evaluationCriteria[0]?.source_document || "",
+        submission: requirements[0]?.source_document || "",
+        legalRisks: risks[0]?.source_document || "",
+      },
+    };
+  };
+
+  const handleTenderCreated = (payload: BatchSummaryPayload) => {
+    setLatestBatch(payload);
+    const tenderData = mapSummaryToTender(payload);
+    setSelected(tenderData);
+    setMode("search");
+    setStep(2);
   };
 
   const handleEstimateDistance = async () => {
@@ -817,12 +951,19 @@ Einreichungs-ID: ${currentSubmissionId || 'Nicht gespeichert'}
   // simple search + sort
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const pool = results.filter(
-      (t) => !q || `${t.title} ${t.buyer} ${t.region} ${t.serviceTypes.join(" ")}`.toLowerCase().includes(q)
-    );
+    const pool = results.filter((t) => {
+      if (!q) return true;
+      const serviceTypes = Array.isArray(t.serviceTypes) ? t.serviceTypes : [];
+      const title = t.title || "";
+      const buyer = t.buyer || "";
+      const region = t.region || "";
+      return `${title} ${buyer} ${region} ${serviceTypes.join(" ")}`
+        .toLowerCase()
+        .includes(q);
+    });
     const sorted = [...pool].sort((a, b) => {
-      if (sortKey === "deadline") return +new Date(a.deadline) - +new Date(b.deadline);
-      return b.score - a.score;
+      if (sortKey === "deadline") return +new Date(a.deadline || 0) - +new Date(b.deadline || 0);
+      return (b.score || 0) - (a.score || 0);
     });
     return sorted;
   }, [query, sortKey, results]);
@@ -927,7 +1068,17 @@ Einreichungs-ID: ${currentSubmissionId || 'Nicht gespeichert'}
                 onProcessingChange={setIsProcessing}
               />
             )}
-            {step === 2 && selected && <StepCriteria tender={selected} routeScore={routeScore} onNext={() => setStep(3)} onBack={() => setStep(1)} onImproveScore={handleImproveScore} onExplainWeights={handleExplainWeights} improvingScore={improvingScore} />}
+            {step === 2 && selected && (
+              <StepCriteria
+                tender={selected}
+                routeScore={routeScore}
+                onNext={() => setStep(3)}
+                onBack={() => setStep(1)}
+                onImproveScore={handleImproveScore}
+                onExplainWeights={handleExplainWeights}
+                improvingScore={improvingScore}
+              />
+            )}
             {step === 2 && !selected && (
               <Card>
                 <CardContent className="p-6 text-center">
@@ -1055,7 +1206,7 @@ function StepScan({
   searching: boolean;
   mode: "search" | "upload";
   setMode: (m: "search" | "upload") => void;
-  onTenderCreated: (tenderId: string) => void;
+  onTenderCreated: (payload: BatchSummaryPayload) => void;
   onProcessingChange?: (status: boolean) => void;
 }) {
   if (mode === "upload") {
@@ -1166,7 +1317,18 @@ function StepScan({
             {results.map((t) => (
               <button
                 key={t.id}
-                onClick={() => setSelected(t)}
+                onClick={async () => {
+                  try {
+                    const runId = t.runId || t.id;
+                    const details = await fetchTenderDetails(runId);
+                    setSelected(details);
+                    onNext();
+                  } catch (err) {
+                    console.error('Failed to load tender details:', err);
+                    setSelected(t);
+                    onNext();
+                  }
+                }}
                 className={`group w-full rounded-2xl border p-4 text-left transition focus:outline-none focus:ring-2 focus:ring-zinc-900 focus:ring-offset-2 ${selected?.id === t.id ? "border-zinc-900 bg-white shadow" : "border-zinc-200 bg-zinc-50 hover:bg-white"
                   }`}
                 aria-pressed={selected?.id === t.id}
@@ -1185,6 +1347,13 @@ function StepScan({
                     </div>
                     <p className="text-sm text-zinc-600">
                       {t.buyer} · Frist {new Date(t.deadline).toLocaleDateString('de-DE')}
+                    </p>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      ID: {t.tenderId || t.id} · Status: {t.status || "unknown"}
+                    </p>
+                    <p className="text-xs text-zinc-500">
+                      Erstellt: {t.createdAt ? new Date(t.createdAt).toLocaleString('de-DE') : "—"}
+                      {t.updatedAt ? ` · Aktualisiert: ${new Date(t.updatedAt).toLocaleString('de-DE')}` : ""}
                     </p>
 
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
@@ -1207,7 +1376,7 @@ function StepScan({
                       >
                         <LinkIcon className="h-3.5 w-3.5" /> Öffnen
                       </a>
-                      <Button size="sm" className="gap-2" onClick={(e) => { e.stopPropagation(); onNext(); }}>
+                      <Button size="sm" className="gap-2" onClick={(e) => { e.stopPropagation(); }}>
                         Weiter <ArrowRight className="h-4 w-4" />
                       </Button>
                     </div>
@@ -1223,7 +1392,23 @@ function StepScan({
 }
 
 // ---------------- Step 2
-function StepCriteria({ tender, routeScore, onNext, onBack, onImproveScore, onExplainWeights, improvingScore }: { tender: Tender; routeScore: number; onNext: () => void; onBack: () => void; onImproveScore: () => Promise<void>; onExplainWeights: () => void; improvingScore: boolean }) {
+function StepCriteria({
+  tender,
+  routeScore,
+  onNext,
+  onBack,
+  onImproveScore,
+  onExplainWeights,
+  improvingScore,
+}: {
+  tender: Tender;
+  routeScore: number;
+  onNext: () => void;
+  onBack: () => void;
+  onImproveScore: () => Promise<void>;
+  onExplainWeights: () => void;
+  improvingScore: boolean;
+}) {
   const goNoGo = tender.score >= 70 && pct(tender.mustHits, tender.mustTotal) >= 80 ? 'GO' : 'NO-GO';
 
   return (
@@ -1247,6 +1432,9 @@ function StepCriteria({ tender, routeScore, onNext, onBack, onImproveScore, onEx
                   `${tender.scopeOfWork.substring(0, 350)}${tender.scopeOfWork.length > 350 ? '...' : ''}`
                 )}
               </p>
+              {tender.scopeOfWorkSource?.source_document && (
+                <SourceBadge source={tender.scopeOfWorkSource.source_document} />
+              )}
             </div>
 
             <Separator />
@@ -1352,19 +1540,24 @@ function StepCriteria({ tender, routeScore, onNext, onBack, onImproveScore, onEx
               <div>
                 <h4 className="text-sm font-semibold mb-3">D. Zuschlagslogik</h4>
                 <ul className="text-xs space-y-3 text-zinc-700">
-                  {tender.evaluationCriteria && tender.evaluationCriteria.length > 0 ? (
-                    tender.evaluationCriteria.map((criteria, i) => (
+                  {tender.evaluationCriteriaWithSource && tender.evaluationCriteriaWithSource.length > 0 ? (
+                    tender.evaluationCriteriaWithSource.map((criteria, i) => (
                       <li key={i} className="flex items-start gap-2">
                         <span className="text-zinc-400 mt-0.5">•</span>
                         <div className="flex-1">
-                          <span className="font-medium">{typeof criteria === 'object' ? criteria?.text : criteria}</span>
-                          {typeof criteria === 'object' && criteria?.source_document && (
-                            <DocumentSourceInline
-                              source_document={criteria.source_document}
-                              source_chunk_id={criteria.source_chunk_id}
-                            />
-                          )}
+                          <span className="font-medium">{criteria.text}</span>
+                          <DocumentSourceInline
+                            source_document={criteria.source_document}
+                            source_chunk_id={criteria.source_chunk_id}
+                          />
                         </div>
+                      </li>
+                    ))
+                  ) : tender.evaluationCriteria && tender.evaluationCriteria.length > 0 ? (
+                    tender.evaluationCriteria.map((criteria, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="text-zinc-400 mt-0.5">•</span>
+                        <div><strong>{criteria}</strong></div>
                       </li>
                     ))
                   ) : (
@@ -1373,6 +1566,7 @@ function StepCriteria({ tender, routeScore, onNext, onBack, onImproveScore, onEx
                       <div><strong>Kriterien:</strong> Standard</div>
                     </li>
                   )}
+                  <SourceBadge source={tender.sources?.evaluationCriteria} />
                 </ul>
               </div>
             </div>
@@ -1428,7 +1622,7 @@ function StepCriteria({ tender, routeScore, onNext, onBack, onImproveScore, onEx
         </CardContent>
       </Card>
 
-      {/* NEW: Detailed Assessment with KPI Percentages */}
+      {/* Detailed Assessment with KPI Percentages */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Detailed assessment</CardTitle>
@@ -2895,16 +3089,23 @@ function RiskList({ risks, risksWithSource, large = false }: { risks?: string[];
     );
   }
 
-  // Fallback to simple risks array
+  // Fallback to simple risks array (string or object)
   if (!risks?.length) return <span className="text-xs text-zinc-400">Keine Risiken erkannt</span>;
   return (
     <div className={`grid ${large ? "gap-2" : "gap-1"}`}>
-      {risks.map((r, i) => (
+      {risks.map((r, i) => {
+        const text =
+          typeof r === "string"
+            ? r
+            : (r?.risk_de || r?.risk || r?.text || "");
+        if (!text) return null;
+        return (
         <span key={i} className={`inline-flex items-center gap-2 ${large ? "text-sm" : "text-xs"} text-amber-700`}>
           <AlertTriangle className="h-4 w-4" />
-          {r}
+          {text}
         </span>
-      ))}
+        );
+      })}
     </div>
   );
 }
