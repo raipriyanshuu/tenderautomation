@@ -648,9 +648,6 @@ export default function ReikanTenderAI() {
 
   const fetchTenderDetails = async (runId: string): Promise<Tender> => {
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:649',message:'fetchTenderDetails CALLED',data:{runId,hypothesisId:'B'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
-    // #endregion
     // Use /api/batches/:id/summary to get consistent ui_json data from run_summaries table
     const response = await fetch(`${apiUrl}/api/batches/${runId}/summary`);
     if (!response.ok) {
@@ -664,9 +661,6 @@ export default function ReikanTenderAI() {
     // payload.data is the raw DB row with structure: { id, run_id, ui_json, summary_json, ... }
     // We need to map ui_json to Tender UI model
     const rawData = payload.data;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:661',message:'API RESPONSE received',data:{rawDataKeys:Object.keys(rawData),uiJsonKeys:rawData.ui_json ? Object.keys(rawData.ui_json) : [],metaSource:rawData.ui_json?.meta?.source_document,risksCount:Array.isArray(rawData.ui_json?.risks)?rawData.ui_json.risks.length:0,evaluationCriteriaCount:Array.isArray(rawData.ui_json?.evaluation_criteria)?rawData.ui_json.evaluation_criteria.length:0,hypothesisId:'D'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
-    // #endregion
     const batchPayload: BatchSummaryPayload = {
       batchId: rawData.run_id || runId,
       summary: {
@@ -681,9 +675,6 @@ export default function ReikanTenderAI() {
 
     // Map to Tender UI model using existing mapping function
     const mappedTender = mapSummaryToTender(batchPayload);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:677',message:'MAPPED TENDER created',data:{mappedTenderKeys:Object.keys(mappedTender),hasEvaluationCriteria:!!mappedTender.evaluationCriteriaWithSource,evaluationCriteriaLength:mappedTender.evaluationCriteriaWithSource?.length,risksLength:mappedTender.legalRisksWithSource?.length,metaSource:mappedTender.sources?.title,hypothesisId:'E'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
-    // #endregion
     // Preserve runId for refetching
     mappedTender.runId = runId;
     return mappedTender;

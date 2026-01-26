@@ -250,7 +250,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({ onTenderCreated,
           </div>
           <Progress value={Number(batchStatus.progress_percent || 0)} />
           <div className="text-xs text-zinc-600">
-            {batchStatus.files_success + batchStatus.files_failed} / {batchStatus.total_files} Dateien abgeschlossen
+            {Number(batchStatus.files_success || 0) + Number(batchStatus.files_failed || 0)} / {batchStatus.total_files} Dateien abgeschlossen
           </div>
         </div>
       )}
