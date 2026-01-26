@@ -645,7 +645,7 @@ export default function ReikanTenderAI() {
 
 
 
-  const fetchTenderDetails = async (runId: string) => {
+  const fetchTenderDetails = async (runId: string): Promise<Tender> => {
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
     // Use /api/batches/:id/summary to get consistent ui_json data from run_summaries table
     const response = await fetch(`${apiUrl}/api/batches/${runId}/summary`);
@@ -656,7 +656,27 @@ export default function ReikanTenderAI() {
     if (!payload?.success || !payload?.data) {
       throw new Error('Tender details not available');
     }
-    return payload.data as Tender;
+
+    // payload.data is the raw DB row with structure: { id, run_id, ui_json, summary_json, ... }
+    // We need to map ui_json to Tender UI model
+    const rawData = payload.data;
+    const batchPayload: BatchSummaryPayload = {
+      batchId: rawData.run_id || runId,
+      summary: {
+        run_id: rawData.run_id || runId,
+        ui_json: rawData.ui_json || {},
+        total_files: rawData.total_files || 0,
+        success_files: rawData.success_files || 0,
+        failed_files: rawData.failed_files || 0,
+        status: rawData.status || 'completed'
+      }
+    };
+
+    // Map to Tender UI model using existing mapping function
+    const mappedTender = mapSummaryToTender(batchPayload);
+    // Preserve runId for refetching
+    mappedTender.runId = runId;
+    return mappedTender;
   };
 
   // Fetch tenders from backend API
@@ -708,7 +728,13 @@ export default function ReikanTenderAI() {
         try {
           setLoadingTenderDetails(true);
           const freshDetails = await fetchTenderDetails(selected.runId);
-          setSelected(freshDetails);
+          // Merge with existing state to preserve any fields not in fresh data
+          setSelected((prev) => ({
+            ...prev,
+            ...freshDetails,
+            // Ensure runId is preserved
+            runId: selected.runId
+          }));
         } catch (error) {
           console.error('Failed to re-fetch tender details:', error);
           // Keep existing data if re-fetch fails
@@ -1299,6 +1325,7 @@ Einreichungs-ID: ${currentSubmissionId || 'Nicht gespeichert'}
                 setMode={setMode}
                 onTenderCreated={handleTenderCreated}
                 onProcessingChange={setIsProcessing}
+                fetchTenderDetails={fetchTenderDetails}
               />
             )}
             {step === 2 && selected && (
@@ -1423,6 +1450,7 @@ function StepScan({
   setMode,
   onTenderCreated,
   onProcessingChange,
+  fetchTenderDetails,
 }: {
   query: string;
   setQuery: (v: string) => void;
@@ -1441,6 +1469,7 @@ function StepScan({
   setMode: (m: "search" | "upload") => void;
   onTenderCreated: (payload: BatchSummaryPayload) => void;
   onProcessingChange?: (status: boolean) => void;
+  fetchTenderDetails: (runId: string) => Promise<Tender>;
 }) {
   if (mode === "upload") {
     return (
