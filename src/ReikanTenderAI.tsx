@@ -723,19 +723,19 @@ export default function ReikanTenderAI() {
   }, [sortKey]);
 
   // Re-fetch tender details when navigating to Overview tab (step 2)
+  // Only refetch if we don't already have the data to prevent overwriting
   useEffect(() => {
     const refetchTenderDetails = async () => {
-      if (step === 2 && selected?.runId) {
+      // Only refetch if:
+      // 1. We're on step 2 (Overview tab)
+      // 2. We have a runId
+      // 3. We don't already have evaluationCriteriaWithSource (indicator of complete data)
+      if (step === 2 && selected?.runId && !selected?.evaluationCriteriaWithSource) {
         try {
           setLoadingTenderDetails(true);
           const freshDetails = await fetchTenderDetails(selected.runId);
-          // Merge with existing state to preserve any fields not in fresh data
-          setSelected((prev) => ({
-            ...prev,
-            ...freshDetails,
-            // Ensure runId is preserved
-            runId: selected.runId
-          }));
+          // Replace the entire selected state with fresh data
+          setSelected(freshDetails);
         } catch (error) {
           console.error('Failed to re-fetch tender details:', error);
           // Keep existing data if re-fetch fails
