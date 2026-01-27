@@ -1649,7 +1649,7 @@ function StepScan({
 
                   {/* Side column */}
                   <div className="col-span-12 md:col-span-4 md:text-right">
-                    <RiskList risks={t.legalRisks} risksWithSource={t.legalRisksWithSource} />
+
                     <div className="mt-3 flex items-center gap-2 md:justify-end">
                       <a
                         href={t.url}
