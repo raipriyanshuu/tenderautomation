@@ -15,6 +15,7 @@ interface BatchStatus {
   batch_id: string;
   batch_status: string;
   total_files: number;
+  files_tracked: number;
   files_success: number;
   files_failed: number;
   files_processing: number;
@@ -250,7 +251,7 @@ export const FileUploadZone: React.FC<FileUploadZoneProps> = ({ onTenderCreated,
           </div>
           <Progress value={Number(batchStatus.progress_percent || 0)} />
           <div className="text-xs text-zinc-600">
-            {Number(batchStatus.files_success || 0) + Number(batchStatus.files_failed || 0)} / {batchStatus.total_files} Dateien abgeschlossen
+            {Number(batchStatus.files_success || 0) + Number(batchStatus.files_failed || 0)} / {Number(batchStatus.total_files) || Number(batchStatus.files_tracked) || 0} files complete
           </div>
         </div>
       )}
