@@ -702,13 +702,13 @@ export default function ReikanTenderAI() {
 
         if (payloadList.length > 0) {
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:703',message:'fetchTenders SUCCESS - setting results',data:{payloadListCount:payloadList.length,firstTenderKeys:Object.keys(payloadList[0]),firstTenderHasEvaluationCriteria:!!payloadList[0].evaluationCriteriaWithSource,hypothesisId:'C'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'ReikanTenderAI.tsx:703', message: 'fetchTenders SUCCESS - setting results', data: { payloadListCount: payloadList.length, firstTenderKeys: Object.keys(payloadList[0]), firstTenderHasEvaluationCriteria: !!payloadList[0].evaluationCriteriaWithSource, hypothesisId: 'C' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'initial' }) }).catch(() => { });
           // #endregion
           setResults(payloadList);
           // Only set selected if we don't have one yet, and preserve properly mapped data
           setSelected((prev) => {
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:706',message:'setSelected callback in fetchTenders',data:{hasPrev:!!prev,hasEvaluationCriteria:!!prev?.evaluationCriteriaWithSource,willPreserve:!!prev?.evaluationCriteriaWithSource,willUsePrev:!!prev,willUsePayload:!prev,hypothesisId:'C'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'ReikanTenderAI.tsx:706', message: 'setSelected callback in fetchTenders', data: { hasPrev: !!prev, hasEvaluationCriteria: !!prev?.evaluationCriteriaWithSource, willPreserve: !!prev?.evaluationCriteriaWithSource, willUsePrev: !!prev, willUsePayload: !prev, hypothesisId: 'C' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'initial' }) }).catch(() => { });
             // #endregion
             // Fix: Preserve selected if it has evaluationCriteriaWithSource (properly mapped from upload)
             if (prev?.evaluationCriteriaWithSource) return prev;
@@ -737,19 +737,19 @@ export default function ReikanTenderAI() {
   useEffect(() => {
     const refetchTenderDetails = async () => {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:745',message:'useEffect triggered - Overview tab navigation',data:{step,hasSelected:!!selected,runId:selected?.runId,selectedId:selected?.id,hasEvaluationCriteria:!!selected?.evaluationCriteriaWithSource,hypothesisId:'A'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'ReikanTenderAI.tsx:745', message: 'useEffect triggered - Overview tab navigation', data: { step, hasSelected: !!selected, runId: selected?.runId, selectedId: selected?.id, hasEvaluationCriteria: !!selected?.evaluationCriteriaWithSource, hypothesisId: 'A' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'initial' }) }).catch(() => { });
       // #endregion
       // Always refetch when navigating to Overview tab if we have a runId or id
       const runId = selected?.runId || selected?.id;
       if (step === 2 && runId) {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:753',message:'REFETCH TRIGGERED - fetching fresh details',data:{runId,hypothesisId:'A'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'ReikanTenderAI.tsx:753', message: 'REFETCH TRIGGERED - fetching fresh details', data: { runId, hypothesisId: 'A' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'initial' }) }).catch(() => { });
         // #endregion
         try {
           setLoadingTenderDetails(true);
           const freshDetails = await fetchTenderDetails(runId);
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:760',message:'FRESH DETAILS FETCHED - about to setSelected',data:{freshDetailsKeys:Object.keys(freshDetails),hasEvaluationCriteria:!!freshDetails.evaluationCriteriaWithSource,evaluationCriteriaLength:freshDetails.evaluationCriteriaWithSource?.length,risksLength:freshDetails.legalRisksWithSource?.length,metaSource:freshDetails.sources?.title,hypothesisId:'A'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'ReikanTenderAI.tsx:760', message: 'FRESH DETAILS FETCHED - about to setSelected', data: { freshDetailsKeys: Object.keys(freshDetails), hasEvaluationCriteria: !!freshDetails.evaluationCriteriaWithSource, evaluationCriteriaLength: freshDetails.evaluationCriteriaWithSource?.length, risksLength: freshDetails.legalRisksWithSource?.length, metaSource: freshDetails.sources?.title, hypothesisId: 'A' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'initial' }) }).catch(() => { });
           // #endregion
           // Replace the entire selected state with fresh data
           setSelected(freshDetails);
@@ -761,7 +761,7 @@ export default function ReikanTenderAI() {
         }
       } else {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:773',message:'REFETCH SKIPPED - no runId/id available',data:{step,hasSelected:!!selected,hasRunId:!!selected?.runId,hasId:!!selected?.id,hypothesisId:'A'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'ReikanTenderAI.tsx:773', message: 'REFETCH SKIPPED - no runId/id available', data: { step, hasSelected: !!selected, hasRunId: !!selected?.runId, hasId: !!selected?.id, hypothesisId: 'A' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'initial' }) }).catch(() => { });
         // #endregion
       }
     };
@@ -1354,7 +1354,7 @@ Einreichungs-ID: ${currentSubmissionId || 'Nicht gespeichert'}
             )}
             {step === 2 && selected && (() => {
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:1362',message:'RENDERING Overview (StepCriteria) with selected',data:{selectedKeys:Object.keys(selected),metaSource:selected.sources?.title,hasEvaluationCriteria:!!selected.evaluationCriteriaWithSource,evaluationCriteriaLength:selected.evaluationCriteriaWithSource?.length || 0,risksLength:selected.legalRisksWithSource?.length || 0,processStepsLength:selected.processSteps?.length || 0,hypothesisId:'ALL'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
+              fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'ReikanTenderAI.tsx:1362', message: 'RENDERING Overview (StepCriteria) with selected', data: { selectedKeys: Object.keys(selected), metaSource: selected.sources?.title, hasEvaluationCriteria: !!selected.evaluationCriteriaWithSource, evaluationCriteriaLength: selected.evaluationCriteriaWithSource?.length || 0, risksLength: selected.legalRisksWithSource?.length || 0, processStepsLength: selected.processSteps?.length || 0, hypothesisId: 'ALL' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'initial' }) }).catch(() => { });
               // #endregion
               return (
                 <StepCriteria
@@ -1612,18 +1612,18 @@ function StepScan({
                   try {
                     const runId = t.runId || t.id;
                     // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:1583',message:'TENDER CARD CLICKED',data:{tenderId:t.id,runId,tenderKeys:Object.keys(t),hasEvaluationCriteria:!!t.evaluationCriteriaWithSource,hypothesisId:'B'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
+                    fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'ReikanTenderAI.tsx:1583', message: 'TENDER CARD CLICKED', data: { tenderId: t.id, runId, tenderKeys: Object.keys(t), hasEvaluationCriteria: !!t.evaluationCriteriaWithSource, hypothesisId: 'B' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'initial' }) }).catch(() => { });
                     // #endregion
                     const details = await fetchTenderDetails(runId);
                     // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:1587',message:'SETTING selected with FETCHED details',data:{detailsKeys:Object.keys(details),hasEvaluationCriteria:!!details.evaluationCriteriaWithSource,hypothesisId:'B'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
+                    fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'ReikanTenderAI.tsx:1587', message: 'SETTING selected with FETCHED details', data: { detailsKeys: Object.keys(details), hasEvaluationCriteria: !!details.evaluationCriteriaWithSource, hypothesisId: 'B' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'initial' }) }).catch(() => { });
                     // #endregion
                     setSelected(details);
                     onNext();
                   } catch (err) {
                     console.error('Failed to load tender details:', err);
                     // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ReikanTenderAI.tsx:1591',message:'ERROR PATH - setting selected with RAW tender from results',data:{tenderKeys:Object.keys(t),hasEvaluationCriteria:!!t.evaluationCriteriaWithSource,hypothesisId:'B'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial'})}).catch(()=>{});
+                    fetch('http://127.0.0.1:7242/ingest/70bc6035-312b-4a30-a0b3-2cb694b82ca0', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'ReikanTenderAI.tsx:1591', message: 'ERROR PATH - setting selected with RAW tender from results', data: { tenderKeys: Object.keys(t), hasEvaluationCriteria: !!t.evaluationCriteriaWithSource, hypothesisId: 'B' }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'initial' }) }).catch(() => { });
                     // #endregion
                     setSelected(t);
                     onNext();
@@ -1636,8 +1636,13 @@ function StepScan({
                 <div className="grid grid-cols-12 items-start gap-3">
                   {/* Meta column */}
                   <div className="col-span-12 md:col-span-8">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="truncate font-medium" title={t.title}>{t.title}</h3>
+                    <div className="flex flex-col gap-1">
+                      {/* Organization name in bold */}
+                      <h3 className="font-bold text-base" title={t.buyer}>{t.buyer}</h3>
+                      {/* Tender title below organization */}
+                      {t.title && t.title !== 'Missing Title' ? (
+                        <p className="text-sm text-zinc-700 font-medium">{t.title}</p>
+                      ) : null}
                     </div>
                     {t.scopeOfWork ? (
                       <p className="text-sm text-zinc-600 mt-1 line-clamp-2">
@@ -1699,7 +1704,7 @@ function StepCriteria({
   const limit = 400;
   const scope = tender.scopeOfWork ?? "";
   const scopeShort = scope.length > limit ? scope.slice(0, limit) + "..." : scope;
-  
+
   return (
     <div className="grid grid-cols-1 gap-4">
       <Card>
@@ -1716,19 +1721,19 @@ function StepCriteria({
             <div>
               <h4 className="text-sm font-semibold mb-1">Kurzbeschreibung</h4>
               <p className="text-sm text-zinc-700 whitespace-pre-wrap break-words">
-  {tender.buyer} sucht {tender.title}. Leistungsort: {tender.region}.{" "}
-  {expanded ? scope : scopeShort}
-</p>
+                {tender.buyer} sucht {tender.title}. Leistungsort: {tender.region}.{" "}
+                {expanded ? scope : scopeShort}
+              </p>
 
-{scope.length > limit && (
-  <button
-    type="button"
-    className="text-xs text-blue-600 hover:underline"
-    onClick={() => setExpanded(v => !v)}
-  >
-    {expanded ? "Weniger anzeigen" : "Mehr anzeigen"}
-  </button>
-)}
+              {scope.length > limit && (
+                <button
+                  type="button"
+                  className="text-xs text-blue-600 hover:underline"
+                  onClick={() => setExpanded(v => !v)}
+                >
+                  {expanded ? "Weniger anzeigen" : "Mehr anzeigen"}
+                </button>
+              )}
               {tender.scopeOfWorkSource?.source_document && (
                 <SourceBadge source={tender.scopeOfWorkSource.source_document} />
               )}
